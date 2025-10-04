@@ -1,0 +1,14 @@
+{
+  "name": "my-hyperevm-subgraph",
+  "version": "1.0.0",
+  "description": "Subgraph for my custom Aave V3 deployment on HyperEVM",
+  "scripts": {
+    "codegen": "graph codegen",
+    "build": "graph build",
+    "deploy": "goldsky subgraph deploy my-hyperevm/v1.0.0 --path ."
+  },
+  "dependencies": {
+    "@graphprotocol/graph-cli": "^0.56.0",
+    "@graphprotocol/graph-ts": "^0.31.0"
+  }
+}

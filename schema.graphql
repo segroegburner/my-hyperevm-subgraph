@@ -1,0 +1,169 @@
+type Reserve @entity {
+  id: ID! # asset address
+  symbol: String!
+  name: String!
+  decimals: Int!
+  
+  # Supply metrics
+  totalLiquidity: BigInt!
+  availableLiquidity: BigInt!
+  totalSupplied: BigInt!
+  
+  # Borrow metrics
+  totalBorrowed: BigInt!
+  totalBorrowedVariable: BigInt!
+  
+  # Rates (in Ray - 27 decimals)
+  liquidityRate: BigInt!
+  variableBorrowRate: BigInt!
+  liquidityIndex: BigInt!
+  variableBorrowIndex: BigInt!
+  
+  # Oracle price (in USD, 8 decimals)
+  priceInUSD: BigInt!
+  lastUpdateTimestamp: BigInt!
+  
+  # Collateral params
+  ltv: BigInt!
+  liquidationThreshold: BigInt!
+  liquidationBonus: BigInt!
+  reserveFactor: BigInt!
+  
+  # Status flags
+  isActive: Boolean!
+  isFrozen: Boolean!
+  borrowingEnabled: Boolean!
+  usageAsCollateralEnabled: Boolean!
+  
+  # aToken
+  aTokenAddress: Bytes!
+  variableDebtTokenAddress: Bytes!
+  
+  # Relationships
+  supplies: [SupplyEvent!]! @derivedFrom(field: "reserve")
+  withdraws: [WithdrawEvent!]! @derivedFrom(field: "reserve")
+  borrows: [BorrowEvent!]! @derivedFrom(field: "reserve")
+  repays: [RepayEvent!]! @derivedFrom(field: "reserve")
+  liquidations: [LiquidationEvent!]! @derivedFrom(field: "collateralReserve")
+  userReserves: [UserReserve!]! @derivedFrom(field: "reserve")
+}
+
+type User @entity {
+  id: ID! # user address
+  
+  # Aggregate metrics
+  totalSuppliedUSD: BigInt!
+  totalBorrowedUSD: BigInt!
+  totalCollateralUSD: BigInt!
+  healthFactor: BigInt!
+  
+  # Relationships
+  reserves: [UserReserve!]! @derivedFrom(field: "user")
+  supplies: [SupplyEvent!]! @derivedFrom(field: "user")
+  withdraws: [WithdrawEvent!]! @derivedFrom(field: "user")
+  borrows: [BorrowEvent!]! @derivedFrom(field: "user")
+  repays: [RepayEvent!]! @derivedFrom(field: "user")
+  liquidations: [LiquidationEvent!]! @derivedFrom(field: "user")
+}
+
+type UserReserve @entity {
+  id: ID! # user address + reserve address
+  user: User!
+  reserve: Reserve!
+  
+  # Balances
+  currentATokenBalance: BigInt!
+  currentVariableDebt: BigInt!
+  
+  # Scaled balances
+  scaledATokenBalance: BigInt!
+  scaledVariableDebt: BigInt!
+  
+  # Indexes at last update
+  liquidityRate: BigInt!
+  variableBorrowRate: BigInt!
+  lastUpdateTimestamp: BigInt!
+  
+  # Usage as collateral
+  usageAsCollateralEnabledOnUser: Boolean!
+}
+
+type SupplyEvent @entity {
+  id: ID! # tx hash + log index
+  user: User!
+  reserve: Reserve!
+  onBehalfOf: Bytes!
+  amount: BigInt!
+  referral: Int!
+  timestamp: BigInt!
+  txHash: Bytes!
+}
+
+type WithdrawEvent @entity {
+  id: ID! # tx hash + log index
+  user: User!
+  reserve: Reserve!
+  to: Bytes!
+  amount: BigInt!
+  timestamp: BigInt!
+  txHash: Bytes!
+}
+
+type BorrowEvent @entity {
+  id: ID! # tx hash + log index
+  user: User!
+  reserve: Reserve!
+  onBehalfOf: Bytes!
+  amount: BigInt!
+  borrowRateMode: Int! # 1 = stable, 2 = variable
+  borrowRate: BigInt!
+  referral: Int!
+  timestamp: BigInt!
+  txHash: Bytes!
+}
+
+type RepayEvent @entity {
+  id: ID! # tx hash + log index
+  user: User!
+  reserve: Reserve!
+  repayer: Bytes!
+  amount: BigInt!
+  useATokens: Boolean!
+  timestamp: BigInt!
+  txHash: Bytes!
+}
+
+type LiquidationEvent @entity {
+  id: ID! # tx hash + log index
+  user: User!
+  collateralReserve: Reserve!
+  debtReserve: Reserve!
+  debtToCover: BigInt!
+  liquidatedCollateralAmount: BigInt!
+  liquidator: Bytes!
+  receiveAToken: Boolean!
+  timestamp: BigInt!
+  txHash: Bytes!
+}
+
+type PriceUpdate @entity {
+  id: ID! # tx hash + log index
+  asset: Bytes!
+  price: BigInt!
+  timestamp: BigInt!
+  txHash: Bytes!
+}
+
+type Protocol @entity {
+  id: ID! # "1"
+  
+  # Global metrics
+  totalValueLockedUSD: BigInt!
+  totalBorrowedUSD: BigInt!
+  totalUsers: Int!
+  totalSupplies: Int!
+  totalBorrows: Int!
+  totalRepays: Int!
+  totalWithdraws: Int!
+  totalLiquidations: Int!
+}

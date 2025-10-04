@@ -1,0 +1,70 @@
+specVersion: 0.0.5
+schema:
+  file: ./schema.graphql
+
+dataSources:
+  # PoolInstance - Your custom pool contract
+  - kind: ethereum
+    name: PoolInstance
+    network: hyperevm-testnet
+    source:
+      address: "0xe9509119aef8e40b58d5607a63042c9daf6aa8dc"
+      abi: PoolInstance
+      startBlock: 33846006  # remplace si tu as un bloc plus précis
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Reserve
+        - User
+        - UserReserve
+        - SupplyEvent
+        - WithdrawEvent
+        - BorrowEvent
+        - RepayEvent
+        - LiquidationEvent
+      abis:
+        - name: PoolInstance
+          file: ./abis/PoolInstance.json
+        - name: ATokenInstance
+          file: ./abis/ATokenInstance.json
+        - name: AaveOracle
+          file: ./abis/AaveOracle.json
+      eventHandlers:
+        - event: Supply(indexed address,address,indexed address,uint256,indexed uint16)
+          handler: handleSupply
+        - event: Withdraw(indexed address,indexed address,indexed address,uint256)
+          handler: handleWithdraw
+        - event: Borrow(indexed address,address,indexed address,uint256,uint8,uint256,indexed uint16)
+          handler: handleBorrow
+        - event: Repay(indexed address,indexed address,indexed address,uint256,bool)
+          handler: handleRepay
+        - event: LiquidationCall(indexed address,indexed address,indexed address,uint256,uint256,address,bool)
+          handler: handleLiquidationCall
+        - event: ReserveDataUpdated(indexed address,uint256,uint256,uint256,uint256,uint256)
+          handler: handleReserveDataUpdated
+      file: ./src/mapping.ts
+
+  # AaveOracle (inchangé)
+  - kind: ethereum
+    name: AaveOracle
+    network: hyperevm-testnet
+    source:
+      address: "0xd215fdfe86e9836a80e2ab2c2df52dd0addaacde"
+      abi: AaveOracle
+      startBlock: 33846006
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Reserve
+        - PriceUpdate
+      abis:
+        - name: AaveOracle
+          file: ./abis/AaveOracle.json
+      eventHandlers:
+        - event: AssetPriceUpdated(address,uint256,uint256)
+          handler: handleAssetPriceUpdated
+      file: ./src/mapping.ts
