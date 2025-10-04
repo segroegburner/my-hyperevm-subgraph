@@ -8,7 +8,7 @@ dataSources:
     source:
       address: "0xe9509119aef8e40b58d5607a63042c9daf6aa8dc"
       abi: PoolInstance
-      startBlock: 0
+      startBlock: 33846006
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
