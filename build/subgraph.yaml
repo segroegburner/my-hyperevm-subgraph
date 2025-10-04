@@ -1,8 +1,7 @@
 specVersion: 0.0.5
 schema:
-  file: ./schema.graphql
+  file: schema.graphql
 dataSources:
-  # Pool - Main lending pool contract
   - kind: ethereum
     name: Pool
     network: hyperevm-testnet
@@ -25,18 +24,20 @@ dataSources:
         - LiquidationEvent
       abis:
         - name: PoolInstance
-          file: ./abis/PoolInstance.json
+          file: Pool\abis\PoolInstance.json
         - name: ATokenInstance
-          file: ./abis/ATokenInstance.json
+          file: Pool\abis\ATokenInstance.json
       eventHandlers:
         - event: Supply(indexed address,address,indexed address,uint256,indexed uint16)
           handler: handleSupply
         - event: Withdraw(indexed address,indexed address,indexed address,uint256)
           handler: handleWithdraw
-        - event: Borrow(indexed address,address,indexed address,uint256,uint8,uint256,indexed uint16)
+        - event: Borrow(indexed address,address,indexed address,uint256,uint8,uint256,indexed
+            uint16)
           handler: handleBorrow
         - event: Repay(indexed address,indexed address,indexed address,uint256,bool)
           handler: handleRepay
-        - event: LiquidationCall(indexed address,indexed address,indexed address,uint256,uint256,address,bool)
+        - event: LiquidationCall(indexed address,indexed address,indexed
+            address,uint256,uint256,address,bool)
           handler: handleLiquidationCall
-      file: ./src/mapping.ts
+      file: Pool\Pool.wasm
