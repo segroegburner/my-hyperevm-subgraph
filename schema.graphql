@@ -1,48 +1,37 @@
-type Reserve @entity {
-  id: ID!
-  symbol: String!
-  name: String!
-  decimals: Int!
-  
-  # Supply metrics
-  totalLiquidity: BigInt!
-  availableLiquidity: BigInt!
-  totalSupplied: BigInt!
-  
-  # Borrow metrics
-  totalBorrowed: BigInt!
-  totalBorrowedVariable: BigInt!
-  
-  # Rates (in Ray - 27 decimals)
-  liquidityRate: BigInt!
-  variableBorrowRate: BigInt!
-  liquidityIndex: BigInt!
-  variableBorrowIndex: BigInt!
-  
-  # Collateral params
-  ltv: BigInt!
-  liquidationThreshold: BigInt!
-  liquidationBonus: BigInt!
-  reserveFactor: BigInt!
-  
-  # Status flags
-  isActive: Boolean!
-  isFrozen: Boolean!
-  borrowingEnabled: Boolean!
-  usageAsCollateralEnabled: Boolean!
-  
-  # aToken
-  aTokenAddress: Bytes!
-  variableDebtTokenAddress: Bytes!
-  
-  # Relationships
-  supplies: [SupplyEvent!]! @derivedFrom(field: "reserve")
-  withdraws: [WithdrawEvent!]! @derivedFrom(field: "reserve")
-  borrows: [BorrowEvent!]! @derivedFrom(field: "reserve")
-  repays: [RepayEvent!]! @derivedFrom(field: "reserve")
-  liquidations: [LiquidationEvent!]! @derivedFrom(field: "collateralReserve")
-  userReserves: [UserReserve!]! @derivedFrom(field: "reserve")
-}
+# Identifiant unique d'une entité (souvent l'adresse d'un user, txHash, etc.)
+# id: ID!  
+# ! signifie champ obligatoire.
+# Sans !, le champ est optionnel (peut être null).
+# Exemple : "0xabc123..." ou "user-001"
+
+# Chaîne de caractères
+# referralCode: String
+# Exemple : "INVITE2025"
+
+# Entier 32 bits
+# referral: Int!
+# Exemple : 42
+
+# Entier arbitrairement grand (utilisé pour montants en wei, index, etc.)
+# totalLiquidity: BigInt!
+# Exemple : 1000000000000000000 (1 ETH en wei)
+
+# Adresse ou hash (bytes bruts)
+# aTokenAddress: Bytes!
+# Exemple : 0x1234567890abcdef...
+
+# Booléen (vrai/faux)
+# isActive: Boolean!
+# Exemple : true ou false
+
+# Une liste d'entités non nulles
+# borrows: [BorrowEvent!]!
+
+# Peut aussi être optionnelle :
+# optionalList: [Reserve]
+# [Type!]! = une liste non nulle contenant uniquement des éléments non nuls
+
+# [Type] = une liste optionnelle, pouvant contenir des éléments nuls
 
 type User @entity {
   id: ID!
@@ -52,6 +41,12 @@ type User @entity {
   totalBorrowedUSD: BigInt!
   totalCollateralUSD: BigInt!
   healthFactor: BigInt!
+
+  referralCode: String
+  referralCount: Int
+  points: Int
+  referralPoints: Int
+  eModeActivated: Boolean
   
   # Relationships
   reserves: [UserReserve!]! @derivedFrom(field: "user")
@@ -62,26 +57,78 @@ type User @entity {
   liquidations: [LiquidationEvent!]! @derivedFrom(field: "user")
 }
 
-type UserReserve @entity {
+# Reserve <==> Asset 
+type Reserve @entity {
   id: ID!
-  user: User!
-  reserve: Reserve!
+  symbol: String!
+  name: String!
+  decimals: Int!
+  priceUSD: BigInt!                      # 💰 Prix actuel en USD
+  marketSizeUSD: BigInt!                 # 📊 Market size
+  availableLiquidity: BigInt!
+  totalLiquidity: BigInt!
+  totalSupplied: BigInt!
+  totalBorrowed: BigInt!
+  utilizationRate: BigInt!               # ⚙️ Utilisation (en base 1e18)
+  market: Market!    # 🔗 lien ajouté
   
-  # Balances
-  currentATokenBalance: BigInt!
-  currentVariableDebt: BigInt!
-  
-  # Scaled balances
-  scaledATokenBalance: BigInt!
-  scaledVariableDebt: BigInt!
-  
-  # Indexes at last update
+  # Rates
+  supplyAPY: BigInt!                     # En Ray (1e27)
+  borrowAPY: BigInt!
   liquidityRate: BigInt!
   variableBorrowRate: BigInt!
-  lastUpdateTimestamp: BigInt!
+  liquidityIndex: BigInt!
+  variableBorrowIndex: BigInt!
   
-  # Usage as collateral
-  usageAsCollateralEnabledOnUser: Boolean!
+  # Collateral params
+  ltv: BigInt!                           # Loan-to-value (ex: 6000 = 60%)
+  liquidationThreshold: BigInt!
+  liquidationBonus: BigInt!
+  reserveFactor: BigInt!
+  liquidationPenalty: BigInt!            # ex: 500 = 5%
+  
+  # Status
+  isActive: Boolean!
+  isFrozen: Boolean!
+  borrowingEnabled: Boolean!
+  usageAsCollateralEnabled: Boolean!
+
+  # Tokens
+  aTokenAddress: Bytes!
+  variableDebtTokenAddress: Bytes!
+
+  # Relationships
+  supplies: [SupplyEvent!]! @derivedFrom(field: "reserve")
+  withdraws: [WithdrawEvent!]! @derivedFrom(field: "reserve")
+  borrows: [BorrowEvent!]! @derivedFrom(field: "reserve")
+  repays: [RepayEvent!]! @derivedFrom(field: "reserve")
+  liquidations: [LiquidationEvent!]! @derivedFrom(field: "collateralReserve")
+  userReserves: [UserReserve!]! @derivedFrom(field: "reserve")
+}
+
+# Position actuelle d’un utilisateur sur une réserve donnée
+type UserReserve @entity {
+  id: ID!                            # ex: `${user.id}-${reserve.id}`
+  user: User!                        # 🔗 Lien vers l’utilisateur
+  reserve: Reserve!                  # 🔗 Lien vers la réserve
+
+  # --- Balances en cours ---
+  depositedAmount: BigInt!           # Montant total déposé (en tokens)
+  borrowedAmount: BigInt!            # Montant total emprunté (en tokens)
+  depositedUSD: BigInt!              # Valeur USD du dépôt
+  borrowedUSD: BigInt!               # Valeur USD de l’emprunt
+
+  # --- Collateral status ---
+  usageAsCollateralEnabled: Boolean! # Si l’utilisateur utilise ce dépôt comme collatéral
+  eModeCategory: Int                 # Catégorie E-Mode si applicable
+
+  # --- Health & risques ---
+  healthFactor: BigInt!              # Santé de cette position (1e18 = seuil)
+  liquidationThreshold: BigInt!      # Seuil appliqué pour cet utilisateur sur cette réserve
+  ltv: BigInt!                       # Loan-to-value spécifique
+
+  # --- Références historiques ---
+  snapshots: [UserReserveSnapshot!]! @derivedFrom(field: "userReserve")
 }
 
 type SupplyEvent @entity {
@@ -90,7 +137,20 @@ type SupplyEvent @entity {
   reserve: Reserve!
   onBehalfOf: Bytes!
   amount: BigInt!
-  referral: Int!
+  referral: Int         # nullable car pas toujours présent
+  timestamp: BigInt!
+  txHash: Bytes!
+}
+
+type BorrowEvent @entity {
+  id: ID!
+  user: User!
+  reserve: Reserve!
+  onBehalfOf: Bytes!
+  amount: BigInt!
+  borrowRateMode: BigInt!   # ⬅️ correction si event Solidity → uint256
+  borrowRate: BigInt!
+  referral: Int             # nullable
   timestamp: BigInt!
   txHash: Bytes!
 }
@@ -105,18 +165,6 @@ type WithdrawEvent @entity {
   txHash: Bytes!
 }
 
-type BorrowEvent @entity {
-  id: ID!
-  user: User!
-  reserve: Reserve!
-  onBehalfOf: Bytes!
-  amount: BigInt!
-  borrowRateMode: Int!
-  borrowRate: BigInt!
-  referral: Int!
-  timestamp: BigInt!
-  txHash: Bytes!
-}
 
 type RepayEvent @entity {
   id: ID!
@@ -152,4 +200,146 @@ type Protocol @entity {
   totalRepays: Int!
   totalWithdraws: Int!
   totalLiquidations: Int!
+}
+
+type Market @entity {
+  id: ID!                           # ex: "pooled" ou "isolated"
+  name: String!                     # "Pooled" ou "Isolated"
+  description: String               # texte descriptif du market
+
+  # Metrics globales
+  marketSizeUSD: BigInt!            # Taille totale du marché (en USD)
+  feesPaidUSD: BigInt!              # Total des frais payés
+  sLPLocked: BigInt                 # Montant total de sLP verrouillé
+  sSWIMPriceUSD: BigInt             # Prix du token SWIM
+  maxAPRLockedSLP: BigInt           # APR max sur sLP bloqué
+
+  # Relations
+  reserves: [Reserve!]! @derivedFrom(field: "market")
+  assets: [Asset!]! @derivedFrom(field: "market") # nouvelle relation
+}
+
+type Asset @entity {
+  id: ID!                          # Exemple : "ETH", "USDT", "HYPE"
+  symbol: String!                  # Symbole (ETH, USDT, etc.)
+  name: String!                    # Nom complet (Ethereum, USD Tether, etc.)
+  icon: String                     # URL ou hash de l’icône
+  category: String                 # "Bluechips", "Hype", "Stablecoins", etc.
+
+  # --- Price data ---
+  priceUSD: BigInt!                # Prix actuel en USD
+  reserveSizeUSD: BigInt!          # Valeur totale du pool (USD)
+  availableLiquidity: BigInt!      # Montant disponible à emprunter (en unités)
+  utilizationRate: BigInt!         # Taux d’utilisation (x100 pour %)
+
+  # --- Interest rates ---
+  supplyAPY: BigInt!               # Taux d’intérêt pour les déposants
+  borrowAPY: BigInt!               # Taux d’intérêt pour les emprunteurs
+  swimAPR: BigInt                  # Taux APR lié au token SWIM
+  loopAPR: BigInt                  # APR en boucle si applicable
+
+  # --- Collateral parameters ---
+  maxLTV: BigInt!                  # Loan-to-Value max (x100 pour %)
+  liquidationThreshold: BigInt!    # Seuil de liquidation
+  liquidationPenalty: BigInt!      # Pénalité de liquidation
+  reserveFactor: BigInt!           # Part des intérêts réservée au protocole
+
+  # --- Totals ---
+  totalSupplied: BigInt!           # Total des tokens déposés
+  totalBorrowed: BigInt!           # Total des tokens empruntés
+
+  # --- Relations ---
+  market: Market!                  # Market auquel appartient l’asset
+  reserve: Reserve!                # Référence directe à la réserve (lien 1:1)
+  rateHistory: [AssetRateSnapshot!]! @derivedFrom(field: "asset")
+}
+
+type AssetRateSnapshot @entity {
+  id: ID!
+  asset: Asset!
+  timestamp: BigInt!
+  priceUSD: BigInt!
+  supplyAPY: BigInt!
+  borrowAPY: BigInt!
+  utilizationRate: BigInt!
+}
+
+# 🧱 Exemple concret : ETH Asset
+# {
+#   "id": "ETH",
+#   "symbol": "ETH",
+#   "name": "Ethereum",
+#   "category": "Bluechips",
+#   "priceUSD": "4345000000000000000000",     // $4,345
+#   "reserveSizeUSD": "234540234000000000000000",
+#   "availableLiquidity": "42510000000000000000",
+#   "utilizationRate": "9255",                // 92.55%
+#   "supplyAPY": "716",
+#   "borrowAPY": "533",
+#   "maxLTV": "8000",
+#   "liquidationThreshold": "8500",
+#   "liquidationPenalty": "1500",
+#   "reserveFactor": "500",
+#   "totalSupplied": "4345980",
+#   "totalBorrowed": "4345980",
+#   "market": "pooled"
+# }
+
+# Chaque bloc (ou chaque période) tu enregistres un snapshot de chaque réserve.
+# Cela permet d’afficher les graphiques “Supply Info” et “Borrow Info”
+type ReserveSnapshot @entity {
+  id: ID!                            # Format recommandé : `${reserve.id}-${timestamp}`
+  reserve: Reserve!                  # 🔗 Lien vers la réserve concernée
+  timestamp: BigInt!                 # ⏰ Moment du snapshot (en secondes)
+  blockNumber: BigInt                # Numéro de bloc (optionnel mais pratique)
+
+  # --- Valeurs de marché ---
+  priceUSD: BigInt!
+  totalLiquidity: BigInt!
+  availableLiquidity: BigInt!
+  totalSupplied: BigInt!
+  totalBorrowed: BigInt!
+  utilizationRate: BigInt!
+
+  # --- Taux ---
+  supplyAPY: BigInt!
+  borrowAPY: BigInt!
+  liquidityRate: BigInt!
+  variableBorrowRate: BigInt!
+
+  # --- Paramètres collatéraux ---
+  ltv: BigInt!
+  liquidationThreshold: BigInt!
+  reserveFactor: BigInt!
+
+  # --- Références ---
+  createdAt: BigInt!                 # Même que timestamp
+}
+
+# Cette entité suit l’évolution des positions pour un utilisateur sur une réserve donnée 
+# (utile pour tes graphiques “User portfolio over time”).
+type UserReserveSnapshot @entity {
+  id: ID!                            # ex: `${userReserve.id}-${timestamp}`
+  userReserve: UserReserve!          # 🔗 Lien vers la position actuelle
+  user: User!
+  reserve: Reserve!
+  timestamp: BigInt!
+  blockNumber: BigInt!
+
+  # --- Balances ---
+  depositedAmount: BigInt!           # Montant déposé à ce moment
+  borrowedAmount: BigInt!            # Montant emprunté
+  depositedUSD: BigInt!              # Valeur USD du dépôt
+  borrowedUSD: BigInt!               # Valeur USD de l’emprunt
+
+  # --- Statut et taux ---
+  supplyAPY: BigInt!
+  borrowAPY: BigInt!
+  healthFactor: BigInt!              # Santé de la position à ce moment-là
+
+  # --- Collateral status ---
+  usageAsCollateralEnabledOnUser: Boolean!
+
+  # --- Références ---
+  createdAt: BigInt!                 # Même que timestamp
 }

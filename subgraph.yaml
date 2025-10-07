@@ -7,9 +7,9 @@ dataSources:
     name: Pool
     network: hyperevm-testnet
     source:
-      address: "0xe9509119aef8e40b58d5607a63042c9daf6aa8dc"
+      address: "0xf4438c3554d0360ecde4358232821354e71c59e9"
       abi: PoolInstance
-      startBlock: 33846006  # Mise à jour du bloc de départ
+      startBlock: 34340096  # Mise à jour du bloc de départ
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
