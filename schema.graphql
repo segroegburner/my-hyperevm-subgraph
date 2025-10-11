@@ -46,8 +46,13 @@ type Asset @entity {
   isFrozen: Boolean!
   borrowingEnabled: Boolean!
   usageAsCollateralEnabled: Boolean!
-  aTokenAddress: Bytes!
-  variableDebtTokenAddress: Bytes!
+
+  # --- Nouveaux champs nécessaires pour le suivi off-chain ---
+  aTokenAddress: Bytes!                 # token représentant la part de dépôt
+  variableDebtTokenAddress: Bytes!      # token représentant la dette
+  liquidityIndex: BigInt!               # index pour recalculer le solde actuel du fournisseur
+  variableBorrowIndex: BigInt!          # index pour recalculer la dette actuelle de l’emprunteur
+  lastUpdateTimestamp: BigInt!          # utile pour calculer les intérêts depuis la dernière MAJ
 
   market: Market!
   userAssets: [UserAsset!]! @derivedFrom(field: "asset")
