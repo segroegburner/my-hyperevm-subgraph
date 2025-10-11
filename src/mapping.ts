@@ -1,360 +1,199 @@
-// src/mapping.ts
-import { BigInt, Address, Bytes, log } from "@graphprotocol/graph-ts";
+import { BigInt, Address } from "@graphprotocol/graph-ts"
 import {
   Supply,
   Withdraw,
   Borrow,
   Repay,
   LiquidationCall
-} from "../generated/Pool/PoolInstance";
-import {
-  Reserve,
-  User,
-  UserReserve,
-  SupplyEvent,
-  WithdrawEvent,
-  BorrowEvent,
-  RepayEvent,
-  LiquidationEvent,
-  Protocol,
-  Market
-} from "../generated/schema";
-import { ATokenInstance } from "../generated/Pool/ATokenInstance";
+} from "../generated/Pool/PoolInstance"
+import { User, Asset, UserAsset, LogEvent } from "../generated/schema"
 
-// Constants
-const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
-const ZERO_BI = BigInt.fromI32(0);
-
-// --- Helpers pour Market ---
-function getOrCreateMarket(): Market {
-  let id = "pooled"; // id par défaut — adapte si tu veux d'autres marchés
-  let market = Market.load(id);
-  if (!market) {
-    market = new Market(id);
-    market.name = "Pooled";
-    market.description = "";
-    market.marketSizeUSD = ZERO_BI;
-    market.feesPaidUSD = ZERO_BI;
-    market.sLPLocked = ZERO_BI;
-    market.sSWIMPriceUSD = ZERO_BI;
-    market.maxAPRLockedSLP = ZERO_BI;
-    market.save();
-  }
-  return market;
-}
-
-// --- Reserve ---
-function getOrCreateReserve(asset: Address): Reserve {
-  let id = asset.toHexString();
-  let reserve = Reserve.load(id);
-
-  if (!reserve) {
-    reserve = new Reserve(id);
-
-    // champs obligatoires (init)
-    reserve.symbol = "";
-    reserve.name = "";
-    reserve.decimals = 18;
-
-    reserve.priceUSD = ZERO_BI;
-    reserve.marketSizeUSD = ZERO_BI;
-    reserve.availableLiquidity = ZERO_BI;
-    reserve.totalLiquidity = ZERO_BI;
-    reserve.totalSupplied = ZERO_BI;
-    reserve.totalBorrowed = ZERO_BI;
-    reserve.utilizationRate = ZERO_BI;
-
-    // associe au market par défaut (évite l'erreur "missing value for non-nullable field `market`")
-    let market = getOrCreateMarket();
-    reserve.market = market.id;
-
-    // rates
-    reserve.supplyAPY = ZERO_BI;
-    reserve.borrowAPY = ZERO_BI;
-    reserve.liquidityRate = ZERO_BI;
-    reserve.variableBorrowRate = ZERO_BI;
-    reserve.liquidityIndex = ZERO_BI;
-    reserve.variableBorrowIndex = ZERO_BI;
-
-    // collateral params
-    reserve.ltv = ZERO_BI;
-    reserve.liquidationThreshold = ZERO_BI;
-    reserve.liquidationBonus = ZERO_BI;
-    reserve.reserveFactor = ZERO_BI;
-    reserve.liquidationPenalty = ZERO_BI;
-
-    // status
-    reserve.isActive = false;
-    reserve.isFrozen = false;
-    reserve.borrowingEnabled = false;
-    reserve.usageAsCollateralEnabled = false;
-
-    // tokens (Bytes non-nullable)
-    reserve.aTokenAddress = Bytes.fromHexString(ZERO_ADDRESS);
-    reserve.variableDebtTokenAddress = Bytes.fromHexString(ZERO_ADDRESS);
-
-    reserve.save();
-    return reserve;
-  }
-
-  // Si la reserve existe mais éventuellement sans market (conséquence d'un ancien déploiement),
-  // on tente de corriger en écrasant avec le market par défaut.
-  // ATTENTION : si l'entité existante est partiellement corrompue, la meilleure option reste un reindex.
-  if (!reserve.market || reserve.market == "") {
-    let market = getOrCreateMarket();
-    reserve.market = market.id;
-    reserve.save();
-  }
-
-  return reserve;
-}
-
-// --- User / UserReserve / Protocol ---
+// --- Helpers ---
 function getOrCreateUser(address: Address): User {
-  let user = User.load(address.toHexString());
+  let id = address.toHexString()
+  let user = User.load(id)
   if (!user) {
-    user = new User(address.toHexString());
-    user.totalSuppliedUSD = ZERO_BI;
-    user.totalBorrowedUSD = ZERO_BI;
-    user.totalCollateralUSD = ZERO_BI;
-    user.healthFactor = ZERO_BI;
-    user.save();
-
-    let protocol = getOrCreateProtocol();
-    protocol.totalUsers += 1;
-    protocol.save();
+    user = new User(id)
+    user.totalSuppliedUSD = BigInt.fromI32(0)
+    user.totalBorrowedUSD = BigInt.fromI32(0)
+    user.totalCollateralUSD = BigInt.fromI32(0)
+    user.points = 0
+    user.referralPoints = 0
+    user.referralCount = 0
+    user.eModeActivated = false
+    // user.referrerAddress = null
+    user.save()
   }
-  return user;
+  return user
 }
 
-function getOrCreateUserReserve(userAddress: Address, reserveAddress: Address): UserReserve {
-  let id = userAddress.toHexString() + "-" + reserveAddress.toHexString();
-  let userReserve = UserReserve.load(id);
-  if (!userReserve) {
-    userReserve = new UserReserve(id);
-    userReserve.user = userAddress.toHexString();
-    userReserve.reserve = reserveAddress.toHexString();
-
-    // champs obligatoires (init)
-    userReserve.depositedAmount = ZERO_BI;
-    userReserve.borrowedAmount = ZERO_BI;
-    userReserve.depositedUSD = ZERO_BI;
-    userReserve.borrowedUSD = ZERO_BI;
-
-    userReserve.usageAsCollateralEnabled = false;
-    // eModeCategory est optionnel → laisser non défini si pas connu
-    // userReserve.eModeCategory = null; // ne pas forcer si non disponible
-
-    userReserve.healthFactor = ZERO_BI;
-    userReserve.liquidationThreshold = ZERO_BI;
-    userReserve.ltv = ZERO_BI;
-
-    userReserve.save();
+function getOrCreateAsset(address: Address, symbol: string = "ASSET"): Asset {
+  let id = address.toHexString()
+  let asset = Asset.load(id)
+  if (!asset) {
+    asset = new Asset(id)
+    asset.symbol = symbol
+    asset.name = symbol
+    asset.decimals = 18
+    asset.type = "POOLED"
+    asset.priceUSD = BigInt.fromI32(0)
+    asset.totalSupplied = BigInt.fromI32(0)
+    asset.totalBorrowed = BigInt.fromI32(0)
+    asset.save()
   }
-  return userReserve;
+  return asset
 }
 
-function getOrCreateProtocol(): Protocol {
-  let protocol = Protocol.load("1");
-  if (!protocol) {
-    protocol = new Protocol("1");
-    protocol.totalValueLockedUSD = ZERO_BI;
-    protocol.totalBorrowedUSD = ZERO_BI;
-    protocol.totalUsers = 0;
-    protocol.totalSupplies = 0;
-    protocol.totalBorrows = 0;
-    protocol.totalRepays = 0;
-    protocol.totalWithdraws = 0;
-    protocol.totalLiquidations = 0;
-    protocol.save();
+function getOrCreateUserAsset(user: User, asset: Asset): UserAsset {
+  let id = user.id + "-" + asset.id
+  let ua = UserAsset.load(id)
+  if (!ua) {
+    ua = new UserAsset(id)
+    ua.user = user.id
+    ua.asset = asset.id
+    ua.depositedAmount = BigInt.fromI32(0)
+    ua.borrowedAmount = BigInt.fromI32(0)
+    ua.depositedUSD = BigInt.fromI32(0)
+    ua.borrowedUSD = BigInt.fromI32(0)
+    ua.usageAsCollateralEnabled = true
+    ua.save()
   }
-  return protocol;
+  return ua
 }
 
-// --- Logging helper pour déboguer le contenu d'une Reserve ---
-function logReserve(reserve: Reserve): void {
-  log.warning("==== Reserve dump: {} ====", [reserve.id]);
-  log.warning("market: {}", [reserve.market]);
-  log.warning("symbol: {}", [reserve.symbol]);
-  log.warning("name: {}", [reserve.name]);
-  log.warning("decimals: {}", [reserve.decimals.toString()]);
-  log.warning("priceUSD: {}", [reserve.priceUSD.toString()]);
-  log.warning("marketSizeUSD: {}", [reserve.marketSizeUSD.toString()]);
-  log.warning("availableLiquidity: {}", [reserve.availableLiquidity.toString()]);
-  log.warning("totalLiquidity: {}", [reserve.totalLiquidity.toString()]);
-  log.warning("totalSupplied: {}", [reserve.totalSupplied.toString()]);
-  log.warning("totalBorrowed: {}", [reserve.totalBorrowed.toString()]);
-  log.warning("utilizationRate: {}", [reserve.utilizationRate.toString()]);
+// --- Handlers ---
 
-  log.warning("supplyAPY: {}", [reserve.supplyAPY.toString()]);
-  log.warning("borrowAPY: {}", [reserve.borrowAPY.toString()]);
-  log.warning("liquidityRate: {}", [reserve.liquidityRate.toString()]);
-  log.warning("variableBorrowRate: {}", [reserve.variableBorrowRate.toString()]);
-  log.warning("liquidityIndex: {}", [reserve.liquidityIndex.toString()]);
-  log.warning("variableBorrowIndex: {}", [reserve.variableBorrowIndex.toString()]);
-
-  log.warning("ltv: {}", [reserve.ltv.toString()]);
-  log.warning("liquidationThreshold: {}", [reserve.liquidationThreshold.toString()]);
-  log.warning("liquidationBonus: {}", [reserve.liquidationBonus.toString()]);
-  log.warning("reserveFactor: {}", [reserve.reserveFactor.toString()]);
-  log.warning("liquidationPenalty: {}", [reserve.liquidationPenalty.toString()]);
-
-  log.warning("isActive: {}", [reserve.isActive ? "true" : "false"]);
-  log.warning("isFrozen: {}", [reserve.isFrozen ? "true" : "false"]);
-  log.warning("borrowingEnabled: {}", [reserve.borrowingEnabled ? "true" : "false"]);
-  log.warning("usageAsCollateralEnabled: {}", [reserve.usageAsCollateralEnabled ? "true" : "false"]);
-
-  log.warning("aTokenAddress: {}", [reserve.aTokenAddress.toHexString()]);
-  log.warning("variableDebtTokenAddress: {}", [reserve.variableDebtTokenAddress.toHexString()]);
-}
-
-// --- Event handlers ---
 export function handleSupply(event: Supply): void {
-  log.warning("dans la fonction handleSupply", []);
-  log.warning("l'utilisateur: {}", [event.params.user.toHexString()]);
-  log.warning("event.params.reserve: {}", [event.params.reserve.toHexString()]);
+  let user = getOrCreateUser(event.params.user)
+  let asset = getOrCreateAsset(event.params.reserve)
+  let ua = getOrCreateUserAsset(user, asset)
 
-  let reserve = getOrCreateReserve(event.params.reserve);
-  // dump pour debugging (affiche tous les champs de reserve)
-  logReserve(reserve);
+  ua.depositedAmount = ua.depositedAmount.plus(event.params.amount)
+  ua.depositedUSD = ua.depositedUSD.plus(event.params.amount)
+  ua.save()
 
-  let user = getOrCreateUser(event.params.user);
-  let userReserve = getOrCreateUserReserve(event.params.user, event.params.reserve);
+  user.totalSuppliedUSD = user.totalSuppliedUSD.plus(event.params.amount)
+  user.points += event.params.amount.toI32() / 1e18
+  user.save()
 
-  let id = event.transaction.hash.toHexString() + "-" + event.logIndex.toString();
-  let supply = new SupplyEvent(id);
-  supply.user = user.id;
-  supply.reserve = reserve.id;
-  supply.onBehalfOf = event.params.onBehalfOf;
-  supply.amount = event.params.amount;
-  supply.referral = 0;
-  supply.timestamp = event.block.timestamp;
-  supply.txHash = event.transaction.hash;
-  supply.save();
+  let id = event.transaction.hash.toHex() + "-" + event.logIndex.toString()
+  let evt = new LogEvent(id)
+  evt.type = "SUPPLY"
+  evt.user = user.id
+  evt.assetRel = asset.id
+  evt.amount = event.params.amount
+  evt.timestamp = event.block.timestamp
+  evt.txHash = event.transaction.hash
+  evt.save()
 
-  // essayer de lire le balanceOf aToken pour mettre à jour depositedAmount
-  let aTokenContract = ATokenInstance.bind(Address.fromBytes(reserve.aTokenAddress));
-  let balanceResult = aTokenContract.try_balanceOf(event.params.user);
-  if (!balanceResult.reverted) {
-    userReserve.depositedAmount = balanceResult.value;
-  } else {
-    // fallback si call revert -> incrémente approximativement
-    userReserve.depositedAmount = userReserve.depositedAmount.plus(event.params.amount);
-  }
-
-  userReserve.save();
-
-  let protocol = getOrCreateProtocol();
-  protocol.totalSupplies += 1;
-  protocol.save();
+  // if (user.referrerAddress) {
+  //   let referrer = User.load(user.referrerAddress)
+  //   if (referrer) {
+  //     referrer.referralPoints += event.params.amount.toI32() / 10e18
+  //     referrer.save()
+  //   }
+  // }
 }
 
 export function handleWithdraw(event: Withdraw): void {
-  let reserve = getOrCreateReserve(event.params.reserve);
-  let user = getOrCreateUser(event.params.user);
-  let userReserve = getOrCreateUserReserve(event.params.user, event.params.reserve);
+  let user = getOrCreateUser(event.params.user)
+  let asset = getOrCreateAsset(event.params.reserve)
+  let ua = getOrCreateUserAsset(user, asset)
 
-  let id = event.transaction.hash.toHexString() + "-" + event.logIndex.toString();
-  let withdraw = new WithdrawEvent(id);
-  withdraw.user = user.id;
-  withdraw.reserve = reserve.id;
-  withdraw.to = event.params.to;
-  withdraw.amount = event.params.amount;
-  withdraw.timestamp = event.block.timestamp;
-  withdraw.txHash = event.transaction.hash;
-  withdraw.save();
+  ua.depositedAmount = ua.depositedAmount.minus(event.params.amount)
+  ua.depositedUSD = ua.depositedUSD.minus(event.params.amount)
+  ua.save()
 
-  let aTokenContract = ATokenInstance.bind(Address.fromBytes(reserve.aTokenAddress));
-  let balanceResult = aTokenContract.try_balanceOf(event.params.user);
-  if (!balanceResult.reverted) {
-    userReserve.depositedAmount = balanceResult.value;
-  } else {
-    if (userReserve.depositedAmount.gt(event.params.amount)) {
-      userReserve.depositedAmount = userReserve.depositedAmount.minus(event.params.amount);
-    } else {
-      userReserve.depositedAmount = ZERO_BI;
-    }
-  }
+  user.totalSuppliedUSD = user.totalSuppliedUSD.minus(event.params.amount)
+  user.save()
 
-  userReserve.save();
-
-  let protocol = getOrCreateProtocol();
-  protocol.totalWithdraws += 1;
-  protocol.save();
+  let id = event.transaction.hash.toHex() + "-" + event.logIndex.toString()
+  let evt = new LogEvent(id)
+  evt.type = "WITHDRAW"
+  evt.user = user.id
+  evt.assetRel = asset.id
+  evt.amount = event.params.amount
+  evt.timestamp = event.block.timestamp
+  evt.txHash = event.transaction.hash
+  evt.save()
 }
 
 export function handleBorrow(event: Borrow): void {
-  let reserve = getOrCreateReserve(event.params.reserve);
-  let user = getOrCreateUser(event.params.user);
-  let userReserve = getOrCreateUserReserve(event.params.user, event.params.reserve);
+  let user = getOrCreateUser(event.params.user)
+  let asset = getOrCreateAsset(event.params.reserve)
+  let ua = getOrCreateUserAsset(user, asset)
 
-  let id = event.transaction.hash.toHexString() + "-" + event.logIndex.toString();
-  let borrow = new BorrowEvent(id);
-  borrow.user = user.id;
-  borrow.reserve = reserve.id;
-  borrow.onBehalfOf = event.params.onBehalfOf;
-  borrow.amount = event.params.amount;
-  borrow.borrowRateMode = BigInt.fromI32(event.params.interestRateMode);
-  borrow.borrowRate = event.params.borrowRate;
-  borrow.timestamp = event.block.timestamp;
-  borrow.txHash = event.transaction.hash;
-  borrow.save();
+  ua.borrowedAmount = ua.borrowedAmount.plus(event.params.amount)
+  ua.borrowedUSD = ua.borrowedUSD.plus(event.params.amount)
+  ua.save()
 
-  userReserve.borrowedAmount = userReserve.borrowedAmount.plus(event.params.amount);
-  userReserve.save();
+  user.totalBorrowedUSD = user.totalBorrowedUSD.plus(event.params.amount)
+  user.points += event.params.amount.toI32() / 2e18
+  user.save()
 
-  let protocol = getOrCreateProtocol();
-  protocol.totalBorrows += 1;
-  protocol.save();
+  let id = event.transaction.hash.toHex() + "-" + event.logIndex.toString()
+  let evt = new LogEvent(id)
+  evt.type = "BORROW"
+  evt.user = user.id
+  evt.assetRel = asset.id
+  evt.amount = event.params.amount
+  evt.borrowRateMode = BigInt.fromI32(event.params.interestRateMode)
+  evt.borrowRate = event.params.borrowRate
+  evt.timestamp = event.block.timestamp
+  evt.txHash = event.transaction.hash
+  evt.save()
 }
 
 export function handleRepay(event: Repay): void {
-  let reserve = getOrCreateReserve(event.params.reserve);
-  let user = getOrCreateUser(event.params.user);
-  let userReserve = getOrCreateUserReserve(event.params.user, event.params.reserve);
+  let user = getOrCreateUser(event.params.user)
+  let asset = getOrCreateAsset(event.params.reserve)
+  let ua = getOrCreateUserAsset(user, asset)
 
-  let id = event.transaction.hash.toHexString() + "-" + event.logIndex.toString();
-  let repay = new RepayEvent(id);
-  repay.user = user.id;
-  repay.reserve = reserve.id;
-  repay.repayer = event.params.repayer;
-  repay.amount = event.params.amount;
-  repay.useATokens = event.params.useATokens;
-  repay.timestamp = event.block.timestamp;
-  repay.txHash = event.transaction.hash;
-  repay.save();
+  ua.borrowedAmount = ua.borrowedAmount.minus(event.params.amount)
+  ua.borrowedUSD = ua.borrowedUSD.minus(event.params.amount)
+  ua.save()
 
-  if (userReserve.borrowedAmount.gt(event.params.amount)) {
-    userReserve.borrowedAmount = userReserve.borrowedAmount.minus(event.params.amount);
-  } else {
-    userReserve.borrowedAmount = ZERO_BI;
-  }
-  userReserve.save();
+  user.totalBorrowedUSD = user.totalBorrowedUSD.minus(event.params.amount)
+  user.save()
 
-  let protocol = getOrCreateProtocol();
-  protocol.totalRepays += 1;
-  protocol.save();
+  let id = event.transaction.hash.toHex() + "-" + event.logIndex.toString()
+  let evt = new LogEvent(id)
+  evt.type = "REPAY"
+  evt.user = user.id
+  evt.assetRel = asset.id
+  evt.amount = event.params.amount
+  evt.repayer = event.params.repayer
+  evt.useATokens = event.params.useATokens
+  evt.timestamp = event.block.timestamp
+  evt.txHash = event.transaction.hash
+  evt.save()
 }
 
 export function handleLiquidationCall(event: LiquidationCall): void {
-  let collateralReserve = getOrCreateReserve(event.params.collateralAsset);
-  let debtReserve = getOrCreateReserve(event.params.debtAsset);
-  let user = getOrCreateUser(event.params.user);
+  let user = getOrCreateUser(event.params.user)
+  let collateral = getOrCreateAsset(event.params.collateralAsset)
+  let debt = getOrCreateAsset(event.params.debtAsset)
+  let ua = getOrCreateUserAsset(user, debt)
 
-  let id = event.transaction.hash.toHexString() + "-" + event.logIndex.toString();
-  let liquidation = new LiquidationEvent(id);
-  liquidation.user = user.id;
-  liquidation.collateralReserve = collateralReserve.id;
-  liquidation.debtReserve = debtReserve.id;
-  liquidation.debtToCover = event.params.debtToCover;
-  liquidation.liquidatedCollateralAmount = event.params.liquidatedCollateralAmount;
-  liquidation.liquidator = event.params.liquidator;
-  liquidation.receiveAToken = event.params.receiveAToken;
-  liquidation.timestamp = event.block.timestamp;
-  liquidation.txHash = event.transaction.hash;
-  liquidation.save();
+  ua.borrowedAmount = ua.borrowedAmount.minus(event.params.debtToCover)
+  ua.borrowedUSD = ua.borrowedUSD.minus(event.params.debtToCover)
+  ua.save()
 
-  let protocol = getOrCreateProtocol();
-  protocol.totalLiquidations += 1;
-  protocol.save();
+  user.totalBorrowedUSD = user.totalBorrowedUSD.minus(event.params.debtToCover)
+  user.save()
+
+  let id = event.transaction.hash.toHex() + "-" + event.logIndex.toString()
+  let evt = new LogEvent(id)
+  evt.type = "LIQUIDATION"
+  evt.user = user.id
+  evt.assetRel = debt.id
+  evt.amount = event.params.debtToCover
+  evt.collateralAsset = collateral.id as Bytes
+  evt.debtToCover = event.params.debtToCover
+  evt.liquidatedCollateralAmount = event.params.liquidatedCollateralAmount
+  evt.liquidator = event.params.liquidator
+  evt.receiveAToken = event.params.receiveAToken
+  evt.timestamp = event.block.timestamp
+  evt.txHash = event.transaction.hash
+  evt.save()
 }

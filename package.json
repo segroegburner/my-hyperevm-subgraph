@@ -7,8 +7,10 @@
     "build": "graph build",
     "deploy": "goldsky subgraph deploy my-hyperevm/v1.0.0 --path ."
   },
+  "type": "module",
   "dependencies": {
     "@graphprotocol/graph-cli": "^0.56.0",
-    "@graphprotocol/graph-ts": "^0.31.0"
+    "@graphprotocol/graph-ts": "^0.31.0",
+    "ethers": "^6.15.0"
   }
 }

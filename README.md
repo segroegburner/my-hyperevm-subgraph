@@ -30,12 +30,14 @@ npm run build
 
 ### Deploy to Goldsky
 ```bash
-goldsky subgraph deploy aave-v3-hyperevm/v1.0.8 --path .
+goldsky subgraph deploy aave-v3-hyperevm/v1.0.13 --path .
 ```
 
 ### Follow the logs
 ```
-goldsky subgraph log aave-v3-hyperevm/v1.0.8 --levels=warn
+goldsky subgraph log aave-v3-hyperevm/v1.0.13 --levels=warn
+goldsky subgraph log aave-v3-hyperevm/v1.0.13 --levels=warn,error
+goldsky subgraph log aave-v3-hyperevm/v1.0.13 --levels=error
 ```
 
 supply()
@@ -43,7 +45,7 @@ supply()
 - amount : 10
 - onBehalfOf : 0xd6C09F431129BF459Ed1D53e3B00190C4BfdB987
 - referralCode : 0
-
+  
 ### Pourquoi mes actions (supply, borrow...) ne fonctionnaient pas ? 
 - Il faut passer par PoolProxy et non PoolInstance
 -> On utilise ce pattern avec proxy pour l’upgradabilité. En gros, tu as l’instance d’un côté (avec la logique), et le proxy de l’autre (avec les data). On ne s’adresse qu’au proxy.

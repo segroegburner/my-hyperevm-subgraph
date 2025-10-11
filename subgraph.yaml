@@ -9,7 +9,7 @@ dataSources:
     source:
       address: "0xf4438c3554d0360ecde4358232821354e71c59e9"
       abi: PoolInstance
-      startBlock: 34340096  # Mise à jour du bloc de départ
+      startBlock: 34417930  # Mise à jour du bloc de départ
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -39,4 +39,6 @@ dataSources:
           handler: handleRepay
         - event: LiquidationCall(indexed address,indexed address,indexed address,uint256,uint256,address,bool)
           handler: handleLiquidationCall
+        - event: ReserveDataUpdated(indexed address,uint256,uint256,uint256,uint256,uint256)
+          handler: handleReserveDataUpdated
       file: ./src/mapping.ts
